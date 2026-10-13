@@ -1,0 +1,81 @@
+{
+  "name": "@argszero/dsh-overflow-recovery",
+  "description": "A session whose request exceeds the model's context window and whose summarizer cannot fit that same window has no way out: every later message replays the same oversized history into the same 400, so the session is unusable until someone edits the persisted log by hand. The shipped non-LLM reducer (`@deepseek-ai/dsh-compaction-tool-result-pruner`) reaches only the middle of tool-result text, which is not where a long conversation's weight sits, so there is no fallback for the case where summarization is itself what cannot fit. This plugin is that fallback: it joins `agent/request-error`, calls `next()` FIRST so a summarizer, a provider retry or another plugin always decides before it, and only when nothing claimed the retry does it drop the oldest droppable region of the model-visible surface — one `compaction/prune` shadow price followed by one `user/message` replacement, the same pair the shipped producers append — and returns `{ kind: 'retry' }`. The log keeps every dropped event; only the surface changes. The cut never touches surface node 0 (the system head) and never splits a tool-call/tool-result pair, so it cannot mint the orphan tool call that wedges a session permanently. Inert whenever anything else owns the overflow. Zero runtime dependencies.",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/argszero/dsh-overflow-recovery.git"
+  },
+  "homepage": "https://github.com/argszero/dsh-overflow-recovery#readme",
+  "bugs": {
+    "url": "https://github.com/argszero/dsh-overflow-recovery/issues"
+  },
+  "keywords": [
+    "cordis",
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "context-window",
+    "context-overflow",
+    "compaction",
+    "overflow-recovery",
+    "agent-request-error",
+    "fallback"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2 || ~4.0.5-alpha.1",
+    "@deepseek-ai/dsh-agent": ">=0.1.7-rc.2 <0.2.0 || >=0.2.0-rc.1 <0.2.1-alpha.2 || >=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-compaction": ">=0.1.7-rc.2 <0.2.0 || >=0.2.0-rc.1 <0.2.1-alpha.2 || >=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.7-rc.2 <0.2.0 || >=0.2.0-rc.1 <0.2.1-alpha.2 || >=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.1.7-rc.2 <0.2.0 || >=0.2.0-rc.1 <0.2.1-alpha.2 || >=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-token-meter": ">=0.1.7-rc.2 <0.2.0 || >=0.2.0-rc.1 <0.2.1-alpha.2 || >=0.2.1-alpha.2 <0.3.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-compaction": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-session": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-token-meter": "0.2.1-alpha.2",
+    "@types/node": "^24.19.1",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "pretest": "tsc",
+    "test": "node --test \"test/*.spec.mjs\"",
+    "prepublishOnly": "tsc",
+    "test:inject": "node scripts/inject-defects.mjs",
+    "probe:lines": "node scripts/probe-lines.mjs"
+  },
+  "engines": {
+    "node": "^22.19 || >=24"
+  }
+}

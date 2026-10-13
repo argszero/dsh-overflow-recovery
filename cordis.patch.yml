@@ -1,0 +1,63 @@
+# The @argszero/dsh-overflow-recovery bundle patch: mount and go.
+#
+# A request that exceeds the model's context window fails the turn with
+# `CONTEXT_WINDOW_EXCEEDED`. The shipped answer is summarization, and when the
+# summarizer cannot fit the same window there is no second answer: every later
+# message replays the same oversized history into the same 400, and the session is
+# unusable until someone edits the persisted log by hand. Discussion #9635 is that
+# report. The shipped non-LLM reducer,
+# `@deepseek-ai/dsh-compaction-tool-result-pruner`, reaches only the middle of
+# tool-result text, which is not where a long conversation's weight sits.
+#
+# This plugin is the missing fallback. It joins `agent/request-error` — the
+# waterfall the agent loop runs the retry decision through — and calls `next()`
+# FIRST:
+#
+#   const downstream = await settleDownstream(next)
+#   if (downstream.type === 'decision' && downstream.decision !== undefined) return downstream.decision
+#
+# so the compaction engine, a provider retry or another plugin always decides
+# before it does. Only when the chain returns no decision at all does it drop the
+# oldest droppable region of the model-visible surface and return
+# `{ kind: 'retry' }`.
+#
+# The drop is one durable replacement in the shape the shipped producers use:
+#
+#   compaction/prune     shadowedRange, shadowedSeqs, shadowedTokenCount
+#   user/message         surfaceOp: { op: 'replace', startSeq, endSeq }
+#                        sourceEventSeqs: [pruneSeq, ...shadowedSeqs]
+#
+# The two appends are synchronous and adjacent because the token meter's surface
+# fold reads them that way: a shadow-price event arms a claim for the very next
+# event, and a replacement consumes it. The log keeps every dropped event — only
+# the surface changes — and the cut never touches surface node 0 (the system head)
+# and never splits a tool-call/tool-result pair, so it cannot mint the orphan
+# `tool/call` that wedges a session permanently.
+#
+# Optional config:
+#
+#   - set:
+#       - id: overflow-recovery
+#         config:
+#           # 'recover' (default) drops the oldest droppable region and retries.
+#           # 'report' writes nothing and logs the reduction 'recover' would have
+#           # made — how to see the size of the drop before allowing it. The turn
+#           # still fails in this mode, because the request did not change.
+#           # 'off' installs no listener at all.
+#           mode: recover
+#           # Estimated tokens to keep verbatim at the newest end of the surface.
+#           retainTokens: 24000
+#           # Never retain fewer than this many newest surface nodes.
+#           retainMinNodes: 4
+#           # Most recoveries performed on one live session before it stops
+#           # claiming the retry. The counter resets when the session commits an
+#           # assistant message, because that is the session answering again.
+#           maxRecoveries: 3
+#
+# Nothing here writes to disk, patches a global, or refuses a tool call: the
+# plugin reads the payload it is handed and appends to the session the failing
+# request already belongs to.
+
+- insert:
+    - id: overflow-recovery
+      name: '@argszero/dsh-overflow-recovery'
